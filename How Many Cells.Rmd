@@ -1,0 +1,137 @@
+---
+title: "How Many Cells?"
+author: "Ojan Khosravifar"
+output: html_document
+---
+
+# Random Sampling Distributions
+
+Binomial and negative binomial distributions can be valuable for modeling probability distributions that result from random sampling. In the context of scRNA-seq, they can be valuable for determining the number of cells to be sequenced in order to capture a certain number of cells from a rare subtypes. They can also help us predict how many of a rare cell type we anticipate to capture with a given number of cells.
+
+Put simply, if we want to capture __*r*__ of a certain cell type with confidence, we can use the negative binomial distribution to determine how many cells we need to sequence overall to do so. If we can only sequence __*k*__ cells, we can use to binomial distribution to determine the range of __*r*__ cells we anticipate to capture with high confidence.
+
+### Sequencing of The Murine Colon
+
+Let's dive into a real world example. In the mouse colon, tuft cells and enteroendocrine cells are the rarest major cell types within the epithelium, both with an abundance of ~1% (__*p*__ = 0.01). Assuming that 50 cells are required to detect these cell types bioinformatically, we can model the number of cells we need to sequence in order to capture 50 cells with the negative binomial distribution. In this case, profiling 6,466 cells would allow us to detect at least 50 tuft cells and at least 50 enteroendocrince cells with 95% probability. Keep in mind that this number does not include cells lost to quality control following sequencing.
+
+```{r echo=F, message=F}
+#install.packages("plotly")
+library(plotly)
+p <- 0.01 #probability of 1%
+k <- 1:20000 #number of cells
+r <- 50 #50 cells needed
+#^2 as we are looking for the probability for two independent clusters present at 1% so we multiply their probabilities
+#if we wanted to find the cells necessary for two or more clusters with unequal p values we would have to multiply pnbinom1 * pnbinom2
+nb.cdf <- pnbinom(k-r,r,p)^2 #I don't like beta functions
+
+#determining x axis range
+min<-which(nb.cdf>.01)
+min<-round(min[1],0)
+max<-which(nb.cdf<.999)
+max<-round(max[length(max)],0)
+
+#determining 95% cutoff
+cutoff <- which(nb.cdf>=.95)
+cutoff <- as.numeric(cutoff[1])
+
+data <- data.frame(k, nb.cdf)
+fig <- plot_ly(data, x=~k, y=~nb.cdf, type="scatter", mode="line")
+fig <- fig %>% layout(title=paste("Probability of Capturing at Least",r,"Cells"), xaxis = list(title = "Number of Cells Sampled", range = c(min,max)), yaxis = list(title = "Probability of Capture")) %>% config(displayModeBar = F)
+fig <- fig %>% add_annotations(x = cutoff,
+                  y = 0.95,
+                  text = paste("0.95 reached at", cutoff),
+                  showarrow = TRUE,
+                  arrowhead = 4,
+                  arrowsize = .5,
+                  ax = 20,
+                  ay = -40,
+                  xref = "x",
+                  yref = "y")
+fig
+```
+
+Let's try another example.F4/80<sup>+</sup>Ly6C<sup>high</sup> macrophages in the mouse colon have an abundance of ~2.5% (__*p*__ = 0.025) within the myeloid cell population. Assume that we would like to capture 250 cells. The negative binomial distribution tells us that profiling 11,049 cells would allow us to detect at least 250 of these macrophages with 95% probability. Again, this number does not account for post-sequencing cell loss due to quality control.
+
+```{r echo=F, message=F}
+p <- 0.025 #probability of 2.5%
+k <- 1:20000 #number of cells
+r <- 250 #250 cells needed
+nb.cdf <- pnbinom(k-r,r,p) #I don't like beta functions
+
+#determining x axis range
+min<-which(nb.cdf>.01)
+min<-round(min[1],0)
+max<-which(nb.cdf<.999)
+max<-round(max[length(max)],0)
+
+#determining 95% cutoff
+cutoff <- which(nb.cdf>=.95)
+cutoff <- as.numeric(cutoff[1])
+
+data <- data.frame(k, nb.cdf)
+fig <- plot_ly(data, x=~k, y=~nb.cdf, type="scatter", mode="line")
+fig <- fig %>% layout(title=paste("Probability of Capturing at Least",r,"Cells"), xaxis = list(title = "Number of Cells Sampled", range = c(min,max)), yaxis = list(title = "Probability of Capture")) %>% config(displayModeBar = F)
+fig <- fig %>% add_annotations(x = cutoff,
+                  y = 0.95,
+                  text = paste("0.95 reached at", cutoff),
+                  showarrow = TRUE,
+                  arrowhead = 4,
+                  arrowsize = .5,
+                  ax = 20,
+                  ay = -40,
+                  xref = "x",
+                  yref = "y")
+fig
+```
+
+10x Genomics is a popular platform for conducting single-cell sequencing experiments. Their platform supports library preparation of 10,000 cells. Suppose we are using their platform and would like to get a sense of how many F4/80<sup>+</sup>Ly6C<sup>high</sup> macrophages we anticipate to recover. Using the binomial distribution we can generate a standard curve to model the range of cells we could potentially capture. In this case, we can anticipate profiling 219 to 281 cells with 95% probability. Keep in mind, higher numbers of cells loaded onto droplet based sequencing platfroms is associated with higher cell doublet/multiplet rates.
+
+```{r echo=F, message=F}
+p <- 0.025 #probability of 2.5%
+k <- 100:400 #number of cells captured
+r <- 10000 #10000 cells sequenced
+b.pdf <- dbinom(k,r,p)
+
+#p <- 0.025 #probability of 2.5%
+#k <- 1:20000 #number of cells
+#r <- 50 #50 cells needed
+#nb.cdf <- pnbinom(k-r,r,p) #I don't like beta functions
+
+#x axis range
+min<-k[1]
+max<-k[length(k)]
+
+#determining sd
+mu<-sum(k*b.pdf)
+#compute the variance, using the formula
+var<-sum(k^2*b.pdf)-mu^2
+sd<-sqrt(var)
+#determining 95% cutoffs: mu+-2*sd
+cutoff <- round((mu-2*sd), 0)
+cutoff1 <- round((mu+2*sd), 0)
+
+data <- data.frame(k, b.pdf)
+fig <- plot_ly(data, x=~k, y=~b.pdf, type="scatter", mode="line")
+fig <- fig %>% layout(title=paste("Probability of Capture with",r,"Cells Sequenced"), xaxis = list(title = "Number of Cells Captured", range = c(min,max)), yaxis = list(title = "Probability of Capture")) %>% config(displayModeBar = F)
+fig <- fig %>% add_annotations(x = cutoff,
+                  y = b.pdf[cutoff-min(k)+1],
+                  text = paste("0.05 reached at", cutoff),
+                  showarrow = TRUE,
+                  arrowhead = 4,
+                  arrowsize = .5,
+                  ax = -60,
+                  ay = -40,
+                  xref = "x",
+                  yref = "y")
+fig <- fig %>% add_annotations(x = cutoff1,
+                  y = b.pdf[cutoff1-min(k)+1],
+                  text = paste("0.95 reached at", cutoff1),
+                  showarrow = TRUE,
+                  arrowhead = 4,
+                  arrowsize = .5,
+                  ax = 60,
+                  ay = -40,
+                  xref = "x",
+                  yref = "y")
+fig
+```
